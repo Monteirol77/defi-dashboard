@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+node_modules
+uploads
+.DS_Store
+../crypto-dashboard
+../defi-dashboard
