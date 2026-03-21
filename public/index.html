@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Report Machine</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            padding: 20px;
+            /* background-color: #f8f9fa; */
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .upload-area {
+            border: 2px dashed #dee2e6;
+            border-radius: 5px;
+            padding: 20px;
+            text-align: center;
+            margin: 20px 0;
+            cursor: pointer;
+        }
+        .upload-area:hover {
+            border-color: #0d6efd;
+        }
+        .report-section {
+            margin-top: 30px;
+            padding: 20px;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+        }
+        .metric-card {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #0d6efd;
+        }
+        .metric-label {
+            color: #6c757d;
+            font-size: 14px;
+        }
+        .chart-container {
+            position: relative;
+            margin: 20px 0;
+            height: 300px;
+        }
+        .table-container {
+            margin-top: 20px;
+            overflow-x: auto;
+        }
+        /* Estilos específicos para as tabelas de Best Sellers */
+        .best-sellers-table {
+            font-size: 0.67em; /* Reduz o tamanho do texto para 2/3 */
+        }
+        .best-sellers-table th,
+        .best-sellers-table td {
+            padding: 0.5rem;
+        }
+        .best-sellers-table .number-cell {
+            text-align: right;
+            font-family: monospace;
+        }
+    </style>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="home-bg">
+    <div class="upload-area" id="dropArea">
+        <i class="fas fa-file-excel fa-3x mb-3"></i>
+        <p class="mb-0">Arraste e solte seu arquivo Excel aqui ou clique para selecionar</p>
+        <input type="file" id="fileInput" accept=".xlsx,.xls" style="display: none;">
+    </div>
+    <div class="container">
+        <div class="d-flex justify-content-end mb-3">
+            <a href="novo.html" class="btn btn-secondary">Ir para Report Machine Stock</a>
+        </div>
+        <h1 class="text-center mb-4">Report Machine</h1>
+        <p class="text-center text-muted mb-4" style="font-size:1.1em;">Só Carregar Ficheiro Excel Lista de Parametros</p>
+        <div id="reports" style="display: none;"></div>
+    </div>
+
+    <script>
+        // Variável global para armazenar os dados da planilha
+        let globalData = [];
+
+        // Variável global para armazenar a instância do gráfico de pizza da seção
+        let secaoPieChartInstance = null;
+
+        // Elementos do DOM
+        const dropArea = document.getElementById('dropArea');
+        const fileInput = document.getElementById('fileInput');
+        const reportsDiv = document.getElementById('reports');
+
+        // Event listeners para drag and drop
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight() {
+            dropArea.classList.add('bg-light');
+        }
+
+        function unhighlight() {
+            dropArea.classList.remove('bg-light');
+        }
+
+        dropArea.addEventListener('drop', handleDrop, false);
+        dropArea.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFiles);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles({ target: { files } });
+        }
+
+        function handleFiles(e) {
+            const files = e.target.files;
+            if (files.length) {
+                uploadFile(files[0]);
+            }
+        }
+
+        function uploadFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+                globalData = data.data; // Salva os dados globalmente
+                showReports(data.ruturasReport, data.bestSellersReport, data.stockReport, data.avsReport, data.toxicoReport);
+                initializeSecaoSelector(globalData); // Popula o seletor de seção
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Erro ao processar o arquivo');
+            });
+        }
+
+        function showReports(ruturasReport, bestSellersReport, stockReport, avsReport, toxicoReport) {
+            // Mostrar seção de relatórios
+            reportsDiv.style.display = 'block';
+
+            // Atualizar métricas de Ruturas
+            document.getElementById('ruturasTotalRefs').textContent = ruturasReport.totalRefs;
+            document.getElementById('ruturasTotal').textContent = ruturasReport.totalRuturas;
+            document.getElementById('ruturasTaxa').textContent = ruturasReport.taxaRuturas + '%';
+
+            // Atualizar métricas de Best Sellers
+            document.getElementById('bestSellersTotalRefs').textContent = bestSellersReport.totalRefs;
+            document.getElementById('bestSellersTotal').textContent = bestSellersReport.totalBestSellers;
+            document.getElementById('bestSellersTaxa').textContent = bestSellersReport.taxaBestSellers + '%';
+
+            // Criar gráficos de Ruturas
+            createBarChart('ruturasBarChart', ruturasReport.chartData, 'Ruturas');
+            createPieChart('ruturasPieChart', ruturasReport.totalRuturas, ruturasReport.totalRefs - ruturasReport.totalRuturas);
+
+            // Criar gráficos de Best Sellers
+            createBarChart('bestSellersBarChart', bestSellersReport.chartData, 'Best Sellers');
+            createPieChart('bestSellersPieChart', bestSellersReport.totalBestSellers, bestSellersReport.totalRefs - bestSellersReport.totalBestSellers);
+
+            // Preencher tabela de Top 15 dias sem venda
+            const ruturasTop15Table = document.getElementById('ruturasTop15Table').getElementsByTagName('tbody')[0];
+            ruturasTop15Table.innerHTML = '';
+            ruturasReport.top15DiasSemVenda.forEach(item => {
+                const row = ruturasTop15Table.insertRow();
+                row.insertCell(0).textContent = item['LM'];
+                row.insertCell(1).textContent = item['Descrição LM'];
+                row.insertCell(2).textContent = item['Secção'];
+                row.insertCell(3).textContent = item['Dias Desde a Última Venda'];
+                row.insertCell(4).textContent = item['Stock'];
+            });
+
+            // Preencher tabela de Top 10 forecast
+            const bestSellersTop10ForecastTable = document.getElementById('bestSellersTop10ForecastTable').getElementsByTagName('tbody')[0];
+            bestSellersTop10ForecastTable.innerHTML = '';
+            bestSellersReport.top10Forecast.forEach(item => {
+                const row = bestSellersTop10ForecastTable.insertRow();
+                row.insertCell(0).textContent = item['LM'];
+                row.insertCell(1).textContent = item['Descrição LM'];
+                const forecastCell = row.insertCell(2);
+                forecastCell.textContent = Math.round(parseFloat(item['Forecast Próximos 90 Dias']) || 0);
+                forecastCell.className = 'number-cell';
+                const stockCell = row.insertCell(3);
+                stockCell.textContent = Math.round(parseFloat(item['Stock']) || 0);
+                stockCell.className = 'number-cell';
+            });
+
+            // Preencher tabela de Top 10 venda média
+            const bestSellersTop10VendaMediaTable = document.getElementById('bestSellersTop10VendaMediaTable').getElementsByTagName('tbody')[0];
+            bestSellersTop10VendaMediaTable.innerHTML = '';
+            bestSellersReport.top10VendaMedia.forEach(item => {
+                const row = bestSellersTop10VendaMediaTable.insertRow();
+                row.insertCell(0).textContent = item['LM'];
+                row.insertCell(1).textContent = item['Descrição LM'];
+                const vendaCell = row.insertCell(2);
+                vendaCell.textContent = Math.round(parseFloat(item['Venda Média (Diária - Últimos 90 dias)']) || 0);
+                vendaCell.className = 'number-cell';
+                const stockCell = row.insertCell(3);
+                stockCell.textContent = Math.round(parseFloat(item['Stock']) || 0);
+                stockCell.className = 'number-cell';
+            });
+
+            // Só processa análises extras se existirem
+            if (typeof processStockAnalysis === 'function' && stockReport) processStockAnalysis(stockReport);
+            if (typeof processAVSAnalysis === 'function' && avsReport) processAVSAnalysis(avsReport);
+            if (typeof processToxicoAnalysis === 'function' && toxicoReport) processToxicoAnalysis(toxicoReport);
+        }
+
+        function createBarChart(canvasId, chartData, label) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: chartData.labels,
+                    datasets: [{
+                        label: 'Total de Referências',
+                        data: chartData.totalData,
+                        backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }, {
+                        label: label,
+                        data: chartData.ruturasData || chartData.bestSellersData,
+                        backgroundColor: 'rgba(255, 99, 132, 0.5)',
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        function createPieChart(canvasId, value1, value2) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: ['Sim', 'Não'],
+                    datasets: [{
+                        data: [value1, value2],
+                        backgroundColor: [
+                            'rgba(255, 99, 132, 0.5)',
+                            'rgba(54, 162, 235, 0.5)'
+                        ],
+                        borderColor: [
+                            'rgba(255, 99, 132, 1)',
+                            'rgba(54, 162, 235, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+        }
+
+        // Função para inicializar o seletor de seção
+        function initializeSecaoSelector(data) {
+            const secaoSelector = document.getElementById('secaoSelector');
+            // Detectar o nome correto da coluna de seção
+            const possiveisNomes = ['Secção', 'Nº Secção', 'Secao', 'Seção', 'Secao', 'NºSecção', 'NºSecao'];
+            let nomeColunaSecao = possiveisNomes.find(nome => data.some(item => item[nome] !== undefined));
+            if (!nomeColunaSecao) {
+                secaoSelector.innerHTML = '<option value="">Nenhuma seção encontrada</option>';
+                return;
+            }
+            const secoes = [...new Set(data.map(item => item[nomeColunaSecao]))].filter(Boolean).sort((a, b) => String(a).localeCompare(String(b), 'pt')).filter(s => s !== undefined && s !== null && s !== '').map(String);
+            // Limpar opções existentes
+            secaoSelector.innerHTML = '<option value="">Selecione uma seção...</option>';
+            // Adicionar opções
+            secoes.forEach(secao => {
+                const option = document.createElement('option');
+                option.value = secao;
+                option.textContent = secao;
+                secaoSelector.appendChild(option);
+            });
+        }
+
+        // Adicionar event listener do seletor de seção apenas uma vez
+        document.addEventListener('DOMContentLoaded', () => {
+            const secaoSelector = document.getElementById('secaoSelector');
+            if (secaoSelector) {
+                secaoSelector.onchange = (e) => {
+                    const secaoSelecionada = e.target.value;
+                    if (secaoSelecionada) {
+                        updateSecaoReport(globalData, secaoSelecionada);
+                    }
+                };
+            }
+        });
+
+        // Função para processar dados por Seção
+        function processSecaoData(data, secaoSelecionada) {
+            // Filtrar dados apenas para a seção selecionada
+            const dadosSecao = data.filter(item => item['Secção'] === secaoSelecionada);
+            
+            // Processar métricas da seção
+            const ruturas = dadosSecao.filter(item => parseFloat(item['Stock']) <= 0);
+            const bestSellers = dadosSecao.filter(item => item['Classificação ADEO'] === 'best');
+            
+            // Calcular totais e taxas
+            const totalRefs = dadosSecao.length;
+            const totalRuturas = ruturas.length;
+            const totalBestSellers = bestSellers.length;
+            const taxaRuturas = ((totalRuturas / totalRefs) * 100).toFixed(2);
+            const taxaBestSellers = ((totalBestSellers / totalRefs) * 100).toFixed(2);
+
+            // Top 15 por dias sem venda (apenas da seção)
+            const top15DiasSemVenda = [...ruturas]
+                .sort((a, b) => {
+                    const diasA = parseFloat(a['Dias Desde a Última Venda']) || 0;
+                    const diasB = parseFloat(b['Dias Desde a Última Venda']) || 0;
+                    return diasB - diasA;
+                })
+                .slice(0, 15);
+
+            // Top 10 por forecast (apenas da seção)
+            const top10Forecast = [...dadosSecao]
+                .sort((a, b) => {
+                    const forecastA = parseFloat(a['Forecast Próximos 90 Dias']) || 0;
+                    const forecastB = parseFloat(b['Forecast Próximos 90 Dias']) || 0;
+                    return forecastB - forecastA;
+                })
+                .slice(0, 10);
+
+            // Top 10 por venda média (apenas da seção)
+            const top10VendaMedia = [...dadosSecao]
+                .sort((a, b) => {
+                    const vendaA = parseFloat(a['Venda Média (Diária)']) || 0;
+                    const vendaB = parseFloat(b['Venda Média (Diária)']) || 0;
+                    return vendaB - vendaA;
+                })
+                .slice(0, 10);
+
+            return {
+                totalRefs,
+                totalRuturas,
+                totalBestSellers,
+                taxaRuturas,
+                taxaBestSellers,
+                top10Forecast,
+                top10VendaMedia,
+                top15DiasSemVenda
+            };
+        }
+
+        // Função para atualizar o relatório por Seção
+        function updateSecaoReport(data, secaoSelecionada) {
+            const secaoData = processSecaoData(data, secaoSelecionada);
+
+            // Atualizar métricas
+            document.getElementById('secaoTotalRefs').textContent = secaoData.totalRefs;
+            document.getElementById('secaoTotalRuturas').textContent = secaoData.totalRuturas;
+            document.getElementById('secaoTaxaRuturas').textContent = secaoData.taxaRuturas + '%';
+            document.getElementById('secaoTotalBestSellers').textContent = secaoData.totalBestSellers;
+            document.getElementById('secaoTaxaBestSellers').textContent = secaoData.taxaBestSellers + '%';
+
+            // Atualizar gráfico
+            updateSecaoPieChart(secaoData);
+
+            // Atualizar tabelas
+            updateSecaoTables(secaoData.top10Forecast, secaoData.top10VendaMedia, secaoData.top15DiasSemVenda);
+        }
+
+        // Função para atualizar gráfico de Seção
+        function updateSecaoPieChart(data) {
+            if (secaoPieChartInstance) {
+                secaoPieChartInstance.destroy();
+            }
+            secaoPieChartInstance = new Chart(document.getElementById('secaoPieChart'), {
+                type: 'pie',
+                data: {
+                    labels: ['Em Rutura', 'Best Sellers', 'Outros'],
+                    datasets: [{
+                        data: [
+                            data.totalRuturas,
+                            data.totalBestSellers,
+                            data.totalRefs - data.totalRuturas - data.totalBestSellers
+                        ],
+                        backgroundColor: [
+                            'rgba(255, 99, 132, 0.5)',
+                            'rgba(75, 192, 192, 0.5)',
+                            'rgba(54, 162, 235, 0.5)'
+                        ],
+                        borderColor: [
+                            'rgba(255, 99, 132, 1)',
+                            'rgba(75, 192, 192, 1)',
+                            'rgba(54, 162, 235, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+        }
+
+        // Função para atualizar tabelas de Seção
+        function updateSecaoTables(top10Forecast, top10VendaMedia, top15DiasSemVenda) {
+            // Tabela de Forecast
+            const forecastTbody = document.querySelector('#secaoTop10ForecastTable tbody');
+            forecastTbody.innerHTML = '';
+            top10Forecast.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${item['LM']}</td>
+                    <td>${item['Descrição LM']}</td>
+                    <td class="number-cell">${Math.round(parseFloat(item['Forecast Próximos 90 Dias']) || 0)}</td>
+                    <td class="number-cell">${Math.round(parseFloat(item['Stock']) || 0)}</td>
+                `;
+                forecastTbody.appendChild(row);
+            });
+
+            // Tabela de Venda Média
+            const vendaMediaTbody = document.querySelector('#secaoTop10VendaMediaTable tbody');
+            vendaMediaTbody.innerHTML = '';
+            top10VendaMedia.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${item['LM']}</td>
+                    <td>${item['Descrição LM']}</td>
+                    <td class="number-cell">${Math.round(parseFloat(item['Venda Média (Diária)']) || 0)}</td>
+                    <td class="number-cell">${Math.round(parseFloat(item['Stock']) || 0)}</td>
+                `;
+                vendaMediaTbody.appendChild(row);
+            });
+
+            // Tabela de Dias Sem Venda
+            const diasSemVendaTbody = document.querySelector('#secaoTop15DiasSemVendaTable tbody');
+            diasSemVendaTbody.innerHTML = '';
+            top15DiasSemVenda.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${item['LM']}</td>
+                    <td>${item['Descrição LM']}</td>
+                    <td class="number-cell">${Math.round(parseFloat(item['Dias Desde a Última Venda']) || 0)}</td>
+                    <td class="number-cell">${Math.round(parseFloat(item['Stock']) || 0)}</td>
+                `;
+                diasSemVendaTbody.appendChild(row);
+            });
+        }
+
+        // Função para processar análise de Stock
+        function processStockAnalysis(stockReport) {
+            // Atualizar métricas
+            document.getElementById('totalStockValue').textContent = formatCurrency(stockReport.totalStockValue);
+            document.getElementById('avgStockValue').textContent = formatCurrency(stockReport.avgStockValue);
+
+            // Criar gráfico
+            createStockBarChart(stockReport.stockBySection);
+        }
+
+        // Função para processar análise de AVS
+        function processAVSAnalysis(avsReport) {
+            // Atualizar métricas
+            document.getElementById('totalAVSValue').textContent = formatCurrency(avsReport.totalAVSValue);
+            document.getElementById('avgAVSValue').textContent = formatCurrency(avsReport.avgAVSValue);
+
+            // Criar gráfico
+            createAVSBarChart(avsReport.avsBySection);
+        }
+
+        // Função para processar análise de Tóxico
+        function processToxicoAnalysis(toxicoReport) {
+            // Atualizar métricas
+            document.getElementById('totalToxicoValue').textContent = formatCurrency(toxicoReport.totalToxicoValue);
+            document.getElementById('avgToxicoValue').textContent = formatCurrency(toxicoReport.avgToxicoValue);
+
+            // Criar gráfico
+            createToxicoBarChart(toxicoReport.toxicoBySection);
+        }
+
+        // Função para criar gráfico de Stock
+        function createStockBarChart(data) {
+            const ctx = document.getElementById('stockValueBarChart').getContext('2d');
+            const sections = Object.keys(data);
+            const values = sections.map(section => data[section].totalValue);
+            const references = sections.map(section => data[section].references);
+
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: sections,
+                    datasets: [{
+                        label: 'Valor de Stock',
+                        data: values,
+                        backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }, {
+                        label: 'Número de Referências',
+                        data: references,
+                        backgroundColor: 'rgba(255, 99, 132, 0.5)',
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // Função para criar gráfico de AVS
+        function createAVSBarChart(data) {
+            const ctx = document.getElementById('avsValueBarChart').getContext('2d');
+            const sections = Object.keys(data);
+            const values = sections.map(section => data[section].totalValue);
+            const references = sections.map(section => data[section].references);
+
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: sections,
+                    datasets: [{
+                        label: 'Valor de AVS',
+                        data: values,
+                        backgroundColor: 'rgba(75, 192, 192, 0.5)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }, {
+                        label: 'Número de Referências',
+                        data: references,
+                        backgroundColor: 'rgba(255, 159, 64, 0.5)',
+                        borderColor: 'rgba(255, 159, 64, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // Função para criar gráfico de Tóxico
+        function createToxicoBarChart(data) {
+            const ctx = document.getElementById('toxicoValueBarChart').getContext('2d');
+            const sections = Object.keys(data);
+            const values = sections.map(section => data[section].totalValue);
+            const references = sections.map(section => data[section].references);
+
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: sections,
+                    datasets: [{
+                        label: 'Valor de Tóxico',
+                        data: values,
+                        backgroundColor: 'rgba(255, 99, 132, 0.5)',
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        borderWidth: 1
+                    }, {
+                        label: 'Número de Referências',
+                        data: references,
+                        backgroundColor: 'rgba(153, 102, 255, 0.5)',
+                        borderColor: 'rgba(153, 102, 255, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // Função auxiliar para formatar valores monetários
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('pt-PT', {
+                style: 'currency',
+                currency: 'EUR'
+            }).format(value);
+        }
+    </script>
+</body>
+</html> 
